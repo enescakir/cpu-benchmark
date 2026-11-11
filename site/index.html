@@ -21,6 +21,7 @@
 
     <div class="filters">
       <div class="segmented" role="radiogroup" aria-label="Time range" id="range">
+        <button type="button" role="radio" data-range="1d">24 hours</button>
         <button type="button" role="radio" data-range="7d">7 days</button>
         <button type="button" role="radio" data-range="30d">30 days</button>
         <button type="button" role="radio" data-range="90d">90 days</button>
@@ -38,7 +39,7 @@
       <section class="card">
         <div class="card-head">
           <h2>CPU Mark</h2>
-          <p>Daily median of the PassMark CPU Mark using every vCPU (UTC days). Higher is better.</p>
+          <p>PassMark CPU Mark using every vCPU, median per UTC hour. Higher is better.</p>
         </div>
         <div class="legend" data-legend="cpu_mark"></div>
         <div class="chart" id="chart-cpu-mark"></div>
@@ -47,7 +48,7 @@
       <section class="card">
         <div class="card-head">
           <h2>Single-thread score</h2>
-          <p>Daily median of the PassMark CPU single-threaded test (UTC days). Higher is better.</p>
+          <p>PassMark CPU single-threaded test, median per UTC hour. Higher is better.</p>
         </div>
         <div class="legend" data-legend="single_thread"></div>
         <div class="chart" id="chart-single"></div>
@@ -56,7 +57,7 @@
       <section class="card">
         <div class="card-head">
           <h2>Queue time</h2>
-          <p>Daily median of the time from job creation until a runner picked it up (UTC days). Lower is better.</p>
+          <p>Time from job creation until a runner picked it up, median per UTC hour. Lower is better.</p>
         </div>
         <div class="legend" data-legend="queue_seconds"></div>
         <div class="chart" id="chart-queue"></div>

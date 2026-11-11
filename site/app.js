@@ -7,12 +7,13 @@ const SLOTS = 8;
 
 const HOUR = 36e5;
 const DAY = 24 * HOUR;
-// Ranges are whole UTC days, today included: charts plot one median per day.
-const RANGES = { "7d": 7, "30d": 30, "90d": 90, all: Infinity };
+// Ranges are whole UTC hours, the current one included: charts plot one
+// median per hour. Values are hour counts.
+const RANGES = { "1d": 24, "7d": 7 * 24, "30d": 30 * 24, "90d": 90 * 24, all: Infinity };
 // x64 and arm64 runners never share a chart: the page shows one at a time.
 const ARCHES = ["x64", "arm64"];
-const GAP = 1.5 * DAY; // a line breaks across a day with no result
-const SNAP = 12 * HOUR; // tooltip matches series points within this of the crosshair
+const GAP = 3 * HOUR; // a line breaks across an outage longer than this
+const SNAP = 30 * 60e3; // tooltip matches series points within this of the crosshair
 const PAGE = 50;
 
 const state = {
@@ -29,13 +30,17 @@ const state = {
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
-// Chart days are UTC days, so everyone sees the same daily medians.
+// Chart hours are UTC hours, so everyone sees the same hourly medians.
 const dayFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+const hourFmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" });
+const dayHourFmt = new Intl.DateTimeFormat(undefined, {
+  month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC",
+});
 const dateTimeFmt = new Intl.DateTimeFormat(undefined, {
   month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
 });
 const monthFmt = new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric", timeZone: "UTC" });
-const utcDay = (t) => Math.floor(t / DAY) * DAY; // start of the UTC day
+const utcHour = (t) => Math.floor(t / HOUR) * HOUR; // start of the UTC hour
 
 const fmtScore = (v) => (v == null ? "–" : nf.format(v));
 
@@ -123,7 +128,7 @@ function loadMonth(month) {
 }
 
 function rangeStart(range) {
-  return range === "all" ? -Infinity : utcDay(Date.now()) - (RANGES[range] - 1) * DAY;
+  return range === "all" ? -Infinity : utcHour(Date.now()) - (RANGES[range] - 1) * HOUR;
 }
 
 function monthsFor(range) {
@@ -208,7 +213,7 @@ function countBy(items, keyFn) {
 
 // ── line chart ─────────────────────────────────────────────────────────
 
-const X_STEPS = [DAY, 2 * DAY, 3 * DAY, 7 * DAY, 14 * DAY];
+const X_STEPS = [HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY, 14 * DAY];
 const DUR_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200];
 
 function xTicks(t0, t1, width) {
@@ -217,14 +222,14 @@ function xTicks(t0, t1, width) {
   const ticks = [];
   if (!step) {
     const every = Math.ceil((t1 - t0) / (30 * DAY) / (maxTicks + 1));
-    const d = new Date(utcDay(t0));
+    const d = new Date(Math.floor(t0 / DAY) * DAY);
     d.setUTCDate(1);
     for (; d.getTime() <= t1; d.setUTCMonth(d.getUTCMonth() + every)) if (d.getTime() >= t0) ticks.push(d.getTime());
     return { ticks, fmt: (t) => monthFmt.format(t) };
   }
-  const first = utcDay(t0) < t0 ? utcDay(t0) + DAY : utcDay(t0);
-  for (let t = first; t <= t1; t += step) ticks.push(t);
-  return { ticks, fmt: (t) => dayFmt.format(t) };
+  // The epoch is a UTC midnight, so multiples of the step land on UTC hours/days.
+  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) ticks.push(t);
+  return { ticks, fmt: (t) => (t % DAY === 0 ? dayFmt.format(t) : hourFmt.format(t)) };
 }
 
 function niceStep(span, count) {
@@ -258,17 +263,17 @@ function durationTicks(max, count) {
   return { lo: 0, hi, ticks, fmt: fmtDuration };
 }
 
-// One point per label per UTC day: the median of that day's runs.
+// One point per label per UTC hour: the median of that hour's runs.
 function seriesFor(rows, labels, field) {
   return labels.map((label) => {
-    const days = new Map();
+    const hours = new Map();
     for (const r of rows) {
       if (r.label !== label || !Number.isFinite(r[field])) continue;
-      const day = utcDay(r.t);
-      if (!days.has(day)) days.set(day, []);
-      days.get(day).push(r);
+      const hour = utcHour(r.t);
+      if (!hours.has(hour)) hours.set(hour, []);
+      hours.get(hour).push(r);
     }
-    const points = [...days]
+    const points = [...hours]
       .sort((a, b) => a[0] - b[0])
       .map(([t, runs]) => ({ t, v: quantile(runs.map((r) => r[field]), 0.5), runs }));
     return { label, color: colorOf(label), points };
@@ -281,7 +286,8 @@ function runsNote(runs) {
   const which = models.length === 1
     ? models[0][0]
     : models.map(([m, c]) => `${m} (${c})`).join(", ");
-  return `median of ${n} run${n === 1 ? "" : "s"}${which ? ` · ${which}` : ""}`;
+  if (n === 1) return which || "1 run";
+  return `median of ${n} runs${which ? ` · ${which}` : ""}`;
 }
 
 function renderLegend(key, series) {
@@ -443,7 +449,7 @@ const tooltip = document.getElementById("tooltip");
 function showTooltip(container, x, clientY, t, rows, kind) {
   const fmt = kind === "duration" ? fmtDuration : fmtScore;
   tooltip.replaceChildren(
-    el("div", { class: "tt-time", text: `${dayFmt.format(t)} (UTC)` }),
+    el("div", { class: "tt-time", text: `${dayHourFmt.format(t)} UTC` }),
     ...(rows.length
       ? rows.map(({ s, p }) =>
         el("div", { class: "tt-row" },
@@ -539,11 +545,11 @@ const CHARTS = [
 function render() {
   const rows = visibleRows();
   const labels = labelsIn(rows);
-  const today = utcDay(Date.now());
+  const current = utcHour(Date.now());
   const first = state.range === "all"
-    ? (rows.length ? utcDay(rows[0].t) : today)
-    : today - (RANGES[state.range] - 1) * DAY;
-  const domain = [first - DAY / 2, today + DAY / 2];
+    ? (rows.length ? utcHour(rows[0].t) : current - DAY)
+    : current - (RANGES[state.range] - 1) * HOUR;
+  const domain = [first - HOUR / 2, current + HOUR / 2];
   for (const c of CHARTS) {
     const series = seriesFor(rows, labels, c.field);
     renderLegend(c.field, series);
