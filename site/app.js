@@ -537,7 +537,6 @@ function renderRuns(rows) {
 // ── page ───────────────────────────────────────────────────────────────
 
 const CHARTS = [
-  { id: "chart-cpu-mark", field: "cpu_mark", kind: "score", name: "CPU Mark" },
   { id: "chart-single", field: "single_thread", kind: "score", name: "Single-thread score" },
   { id: "chart-queue", field: "queue_seconds", kind: "duration", name: "Queue time" },
 ];
