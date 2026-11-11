@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubicloud-standard-2
+    runs-on: ubuntu-slim
     timeout-minutes: 10
     permissions:
       contents: read

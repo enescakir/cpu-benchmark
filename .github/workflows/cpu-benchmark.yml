@@ -61,7 +61,8 @@ jobs:
     # Also after failed or never-started benchmark jobs: their queue time and
     # failure are worth keeping.
     if: always()
-    runs-on: ubicloud-standard-2
+    # store.rb needs Ruby, which ubuntu-slim doesn't ship.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write # push to the data branch

@@ -20,7 +20,7 @@ as charts.
 ## How it works
 
 ```
-bench (matrix, one job per label)          publish (ubicloud-standard-2)          pages
+bench (matrix, one job per label)          publish (ubuntu-latest)                pages (ubuntu-slim)
   scripts/bench.rb system                    download result artifacts             site/ + data branch
   scripts/install-passmark.sh       ──►      scripts/store.rb collect     ──►      → GitHub Pages
   scripts/bench.rb passmark                    (Jobs API: created/started_at)
