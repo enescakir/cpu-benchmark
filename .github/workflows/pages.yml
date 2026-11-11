@@ -1,0 +1,66 @@
+name: Pages
+
+# Publishes site/ with the `data` branch mounted at data/. Runs after every
+# benchmark (called from cpu-benchmark.yml) and when the site changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    # Deploys queue rather than overlap. A queued deploy that a newer one
+    # replaces loses nothing: each deploy ships the whole data branch.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: data
+        name: Check for data
+        run: |
+          if git ls-remote --exit-code --heads origin data >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.data.outputs.exists == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: data
+          path: _site/data
+          persist-credentials: false
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/data
+          rm -rf _site/data/.git
+          cp -R site/. _site/
+          [ -f _site/data/index.json ] || echo '{"months": []}' > _site/data/index.json
+          find _site -type f | sort
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

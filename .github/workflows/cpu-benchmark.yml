@@ -1,0 +1,109 @@
+name: CPU benchmark
+
+# PassMark PerformanceTest CPU suite every hour on each Ubicloud runner label,
+# plus the runner's CPU model and how long the job waited for a runner.
+# Results are appended to the `data` branch and published to GitHub Pages.
+
+on:
+  schedule:
+    # Hourly, off the top of the hour: GitHub delays and sometimes drops
+    # scheduled runs at :00, when most cron workflows fire.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    # store.py finds these jobs by this exact name pattern.
+    name: bench (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        label:
+          - ubicloud-standard-2
+          - ubicloud-premium-2
+          - ubicloud-standard-2-arm
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 30
+    env:
+      BENCH_LABEL: ${{ matrix.label }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: System info
+        run: python3 scripts/bench.py system --out "$RUNNER_TEMP/bench/$BENCH_LABEL.json"
+
+      - name: Install PassMark
+        run: scripts/install-passmark.sh "$RUNNER_TEMP/passmark/pt_linux"
+
+      - name: PassMark CPU
+        run: >-
+          python3 scripts/bench.py passmark
+          --binary "$RUNNER_TEMP/passmark/pt_linux"
+          --raw "$RUNNER_TEMP/bench/raw"
+          --out "$RUNNER_TEMP/bench/$BENCH_LABEL.json"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result-${{ matrix.label }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bench/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    needs: bench
+    # Also after failed or never-started benchmark jobs: their queue time and
+    # failure are worth keeping.
+    if: always()
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 10
+    permissions:
+      contents: write # push to the data branch
+      actions: read # job created_at / started_at
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        # Nothing to download when no benchmark job got a runner.
+        continue-on-error: true
+        with:
+          pattern: result-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/results
+
+      - name: Collect job timings
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/store.py collect --results "$RUNNER_TEMP/results" --out "$RUNNER_TEMP/rows.json"
+
+      - name: Create the data branch on first run
+        run: |
+          if ! git ls-remote --exit-code --heads origin data >/dev/null; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            root=$(git commit-tree "$(git hash-object -w -t tree /dev/null)" -m "Start benchmark data")
+            git push origin "${root}:refs/heads/data" || git ls-remote --exit-code --heads origin data
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: data
+          path: .data
+
+      - name: Store results
+        run: scripts/push-data.sh "$RUNNER_TEMP/rows.json" .data
+
+  pages:
+    needs: publish
+    if: always() && needs.publish.result == 'success'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml

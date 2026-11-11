@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Runner CPU Benchmark</title>
+  <meta name="description" content="Hourly PassMark CPU benchmark and job queue time for Ubicloud GitHub Actions runners.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <h1>Ubicloud runner CPU benchmark</h1>
+      <p class="lede">
+        PassMark PerformanceTest CPU suite, run every hour on each runner label, with the CPU model the
+        job landed on and how long it waited for a runner (job <code>created_at</code> to
+        <code>started_at</code>).
+      </p>
+      <p class="meta" id="meta">Loading results…</p>
+    </header>
+
+    <div class="filters">
+      <div class="segmented" role="radiogroup" aria-label="Time range" id="range">
+        <button type="button" role="radio" data-range="1d">24 hours</button>
+        <button type="button" role="radio" data-range="7d">7 days</button>
+        <button type="button" role="radio" data-range="30d">30 days</button>
+        <button type="button" role="radio" data-range="90d">90 days</button>
+        <button type="button" role="radio" data-range="all">All</button>
+      </div>
+    </div>
+
+    <div id="content" class="content">
+      <section class="summary" id="summary" aria-label="Summary by runner label"></section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>CPU Mark</h2>
+          <p>PassMark CPU Mark using every vCPU. Higher is better.</p>
+        </div>
+        <div class="legend" data-legend="cpu_mark"></div>
+        <div class="chart" id="chart-cpu-mark"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Single-thread score</h2>
+          <p>PassMark CPU single-threaded test. Higher is better.</p>
+        </div>
+        <div class="legend" data-legend="single_thread"></div>
+        <div class="chart" id="chart-single"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Queue time</h2>
+          <p>Time from job creation until a runner picked it up. Lower is better.</p>
+        </div>
+        <div class="legend" data-legend="queue_seconds"></div>
+        <div class="chart" id="chart-queue"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>CPU models</h2>
+          <p>Which processors each label ran on in this range, and how they scored.</p>
+        </div>
+        <div class="table-wrap">
+          <table id="models">
+            <thead>
+              <tr>
+                <th scope="col">Label</th>
+                <th scope="col">CPU model</th>
+                <th scope="col" class="num">Runs</th>
+                <th scope="col" class="num">Share</th>
+                <th scope="col" class="num">CPU Mark p50</th>
+                <th scope="col" class="num">Single-thread p50</th>
+                <th scope="col" class="num">Queue p50</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Runs</h2>
+          <p id="runs-caption">Every benchmark job in this range, newest first.</p>
+        </div>
+        <div class="table-wrap">
+          <table id="runs">
+            <thead>
+              <tr>
+                <th scope="col">Created</th>
+                <th scope="col">Label</th>
+                <th scope="col">CPU model</th>
+                <th scope="col" class="num">CPU Mark</th>
+                <th scope="col" class="num">Single-thread</th>
+                <th scope="col" class="num">Queue</th>
+                <th scope="col">Result</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <button type="button" class="more" id="runs-more" hidden>Show more</button>
+      </section>
+    </div>
+
+    <footer class="footer">
+      <p>
+        Raw data: one JSON line per job in <a href="data/index.json">data/runs/&lt;month&gt;.jsonl</a>.
+        PassMark arguments: <code>-r 1 -i 2 -d 2 -p $(nproc)</code>.
+      </p>
+    </footer>
+  </main>
+  <div class="tooltip" id="tooltip" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
