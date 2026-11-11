@@ -21,9 +21,9 @@ as charts.
 
 ```
 bench (matrix, one job per label)          publish (ubicloud-standard-2)          pages
-  scripts/bench.py system                    download result artifacts             site/ + data branch
-  scripts/install-passmark.sh       ──►      scripts/store.py collect     ──►      → GitHub Pages
-  scripts/bench.py passmark                    (Jobs API: created/started_at)
+  scripts/bench.rb system                    download result artifacts             site/ + data branch
+  scripts/install-passmark.sh       ──►      scripts/store.rb collect     ──►      → GitHub Pages
+  scripts/bench.rb passmark                    (Jobs API: created/started_at)
   upload result-<label> artifact             scripts/push-data.sh → data branch
 ```
 
@@ -57,5 +57,5 @@ on the site automatically. To give a new label a fixed chart color, add it to
 git fetch origin data
 mkdir -p /tmp/bench-site/data && cp -R site/. /tmp/bench-site/
 git archive origin/data | tar -x -C /tmp/bench-site/data
-python3 -m http.server -d /tmp/bench-site 8000
+ruby -run -e httpd /tmp/bench-site -p 8000   # needs: gem install webrick
 ```

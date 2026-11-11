@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   bench:
-    # store.py finds these jobs by this exact name pattern.
+    # store.rb finds these jobs by this exact name pattern.
     name: bench (${{ matrix.label }})
     strategy:
       fail-fast: false
@@ -35,14 +35,14 @@ jobs:
           persist-credentials: false
 
       - name: System info
-        run: python3 scripts/bench.py system --out "$RUNNER_TEMP/bench/$BENCH_LABEL.json"
+        run: ruby scripts/bench.rb system --out "$RUNNER_TEMP/bench/$BENCH_LABEL.json"
 
       - name: Install PassMark
         run: scripts/install-passmark.sh "$RUNNER_TEMP/passmark/pt_linux"
 
       - name: PassMark CPU
         run: >-
-          python3 scripts/bench.py passmark
+          ruby scripts/bench.rb passmark
           --binary "$RUNNER_TEMP/passmark/pt_linux"
           --raw "$RUNNER_TEMP/bench/raw"
           --out "$RUNNER_TEMP/bench/$BENCH_LABEL.json"
@@ -80,7 +80,7 @@ jobs:
       - name: Collect job timings
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/store.py collect --results "$RUNNER_TEMP/results" --out "$RUNNER_TEMP/rows.json"
+        run: ruby scripts/store.rb collect --results "$RUNNER_TEMP/results" --out "$RUNNER_TEMP/rows.json"
 
       - name: Create the data branch on first run
         run: |

@@ -10,14 +10,14 @@ set -euo pipefail
 ROWS=$(realpath "$1")
 DIR=$2
 BRANCH=${DATA_BRANCH:-data}
-STORE="$(cd "$(dirname "$0")" && pwd)/store.py"
+STORE="$(cd "$(dirname "$0")" && pwd)/store.rb"
 
 cd "$DIR"
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
 for attempt in 1 2 3 4 5; do
-  python3 "$STORE" append "$ROWS" --data .
+  ruby "$STORE" append "$ROWS" --data .
   git add -A
   if git diff --cached --quiet; then
     echo "nothing new to store"
