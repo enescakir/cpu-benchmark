@@ -8,6 +8,8 @@ const SLOTS = 8;
 const HOUR = 36e5;
 const DAY = 24 * HOUR;
 const RANGES = { "1d": DAY, "7d": 7 * DAY, "30d": 30 * DAY, "90d": 90 * DAY, all: Infinity };
+// x64 and arm64 runners never share a chart: the page shows one at a time.
+const ARCHES = ["x64", "arm64"];
 const GAP = 3 * HOUR; // a line breaks across an outage longer than this
 const SNAP = 30 * 60e3; // tooltip matches series points within this of the crosshair
 const PAGE = 50;
@@ -17,6 +19,7 @@ const state = {
   months: new Map(),
   extraLabels: [],
   range: "7d",
+  arch: "x64",
   rows: [],
   runsShown: PAGE,
 };
@@ -136,6 +139,18 @@ async function rowsFor(range) {
   state.extraLabels = [...extra].sort();
   const start = rangeStart(range);
   return all.filter((r) => r.t >= start).sort((a, b) => a.t - b.t);
+}
+
+function archOf(row) {
+  const arch = String(row.arch || "").toLowerCase();
+  if (arch === "aarch64" || arch === "arm64") return "arm64";
+  if (arch === "x86_64" || arch === "amd64") return "x64";
+  // Jobs that never got a runner have no arch; their label tells.
+  return /(^|-)arm(64)?($|-)/.test(row.label) ? "arm64" : "x64";
+}
+
+function visibleRows() {
+  return state.rows.filter((r) => archOf(r) === state.arch);
 }
 
 function labelsIn(rows) {
@@ -515,7 +530,7 @@ const CHARTS = [
 ];
 
 function render() {
-  const rows = state.rows;
+  const rows = visibleRows();
   const labels = labelsIn(rows);
   const now = Date.now();
   const t0 = state.range === "all" ? (rows.length ? rows[0].t : now - DAY) : now - RANGES[state.range];
@@ -540,14 +555,33 @@ function render() {
     : updated || "No results yet. The first hourly run will add some.";
 }
 
+function syncHash() {
+  history.replaceState(null, "", `#range=${state.range}&arch=${state.arch}`);
+}
+
+function markChecked(group, key, value) {
+  for (const b of document.querySelectorAll(`#${group} button`)) {
+    b.setAttribute("aria-checked", String(b.dataset[key] === value));
+  }
+}
+
+function setArch(arch, { push = true } = {}) {
+  if (!ARCHES.includes(arch)) arch = ARCHES[0];
+  state.arch = arch;
+  state.runsShown = PAGE;
+  markChecked("arch", "arch", arch);
+  if (push) {
+    syncHash();
+    render();
+  }
+}
+
 async function setRange(range, { push = true } = {}) {
   if (!(range in RANGES)) range = "7d";
   state.range = range;
   state.runsShown = PAGE;
-  for (const b of document.querySelectorAll("#range button")) {
-    b.setAttribute("aria-checked", String(b.dataset.range === range));
-  }
-  if (push) history.replaceState(null, "", `#range=${range}`);
+  markChecked("range", "range", range);
+  if (push) syncHash();
   const content = document.getElementById("content");
   content.classList.add("loading");
   const rows = await rowsFor(range);
@@ -562,9 +596,12 @@ async function main() {
   for (const b of document.querySelectorAll("#range button")) {
     b.addEventListener("click", () => setRange(b.dataset.range));
   }
+  for (const b of document.querySelectorAll("#arch button")) {
+    b.addEventListener("click", () => setArch(b.dataset.arch));
+  }
   document.getElementById("runs-more").addEventListener("click", () => {
     state.runsShown += PAGE;
-    renderRuns(state.rows);
+    renderRuns(visibleRows());
   });
 
   let pending = 0;
@@ -587,8 +624,9 @@ async function main() {
   } catch {
     state.index = { months: [] };
   }
-  const fromHash = new URLSearchParams(location.hash.slice(1)).get("range");
-  await setRange(fromHash || "7d", { push: false });
+  const hash = new URLSearchParams(location.hash.slice(1));
+  setArch(hash.get("arch"), { push: false });
+  await setRange(hash.get("range") || "7d", { push: false });
 }
 
 main();
