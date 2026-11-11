@@ -34,7 +34,8 @@ bench (matrix, one job per label)          publish (ubuntu-latest)              
   `index.json` (the list of months). Rows are keyed by `(run_id, run_attempt, label)`,
   so a re-run never adds duplicates. Concurrent pushes retry on top of the latest branch.
 - The site in `site/` is plain HTML/JS with no dependencies. It loads only the months
-  the selected time range needs.
+  the selected time range needs. Charts plot one point per label per UTC day, the
+  median of that day's runs; the runs table lists every run.
 
 ## Setup
 

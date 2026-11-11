@@ -7,11 +7,12 @@ const SLOTS = 8;
 
 const HOUR = 36e5;
 const DAY = 24 * HOUR;
-const RANGES = { "1d": DAY, "7d": 7 * DAY, "30d": 30 * DAY, "90d": 90 * DAY, all: Infinity };
+// Ranges are whole UTC days, today included: charts plot one median per day.
+const RANGES = { "7d": 7, "30d": 30, "90d": 90, all: Infinity };
 // x64 and arm64 runners never share a chart: the page shows one at a time.
 const ARCHES = ["x64", "arm64"];
-const GAP = 3 * HOUR; // a line breaks across an outage longer than this
-const SNAP = 30 * 60e3; // tooltip matches series points within this of the crosshair
+const GAP = 1.5 * DAY; // a line breaks across a day with no result
+const SNAP = 12 * HOUR; // tooltip matches series points within this of the crosshair
 const PAGE = 50;
 
 const state = {
@@ -28,12 +29,13 @@ const state = {
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
-const dateFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
+// Chart days are UTC days, so everyone sees the same daily medians.
+const dayFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 const dateTimeFmt = new Intl.DateTimeFormat(undefined, {
   month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
 });
-const monthFmt = new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" });
+const monthFmt = new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric", timeZone: "UTC" });
+const utcDay = (t) => Math.floor(t / DAY) * DAY; // start of the UTC day
 
 const fmtScore = (v) => (v == null ? "–" : nf.format(v));
 
@@ -121,7 +123,7 @@ function loadMonth(month) {
 }
 
 function rangeStart(range) {
-  return range === "all" ? -Infinity : Date.now() - RANGES[range];
+  return range === "all" ? -Infinity : utcDay(Date.now()) - (RANGES[range] - 1) * DAY;
 }
 
 function monthsFor(range) {
@@ -206,7 +208,7 @@ function countBy(items, keyFn) {
 
 // ── line chart ─────────────────────────────────────────────────────────
 
-const X_STEPS = [HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY, 14 * DAY];
+const X_STEPS = [DAY, 2 * DAY, 3 * DAY, 7 * DAY, 14 * DAY];
 const DUR_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200];
 
 function xTicks(t0, t1, width) {
@@ -215,25 +217,14 @@ function xTicks(t0, t1, width) {
   const ticks = [];
   if (!step) {
     const every = Math.ceil((t1 - t0) / (30 * DAY) / (maxTicks + 1));
-    const d = new Date(t0);
-    d.setDate(1);
-    d.setHours(0, 0, 0, 0);
-    for (; d.getTime() <= t1; d.setMonth(d.getMonth() + every)) if (d.getTime() >= t0) ticks.push(d.getTime());
+    const d = new Date(utcDay(t0));
+    d.setUTCDate(1);
+    for (; d.getTime() <= t1; d.setUTCMonth(d.getUTCMonth() + every)) if (d.getTime() >= t0) ticks.push(d.getTime());
     return { ticks, fmt: (t) => monthFmt.format(t) };
   }
-  if (step < DAY) {
-    const hours = step / HOUR;
-    const d = new Date(t0);
-    d.setMinutes(0, 0, 0);
-    while (d.getTime() < t0 || d.getHours() % hours) d.setHours(d.getHours() + 1);
-    for (let t = d.getTime(); t <= t1; t += step) ticks.push(t);
-    return { ticks, fmt: (t) => (new Date(t).getHours() === 0 ? dateFmt.format(t) : timeFmt.format(t)) };
-  }
-  const d = new Date(t0);
-  d.setHours(0, 0, 0, 0);
-  if (d.getTime() < t0) d.setDate(d.getDate() + 1);
-  for (; d.getTime() <= t1; d.setDate(d.getDate() + step / DAY)) ticks.push(d.getTime());
-  return { ticks, fmt: (t) => dateFmt.format(t) };
+  const first = utcDay(t0) < t0 ? utcDay(t0) + DAY : utcDay(t0);
+  for (let t = first; t <= t1; t += step) ticks.push(t);
+  return { ticks, fmt: (t) => dayFmt.format(t) };
 }
 
 function niceStep(span, count) {
@@ -267,14 +258,30 @@ function durationTicks(max, count) {
   return { lo: 0, hi, ticks, fmt: fmtDuration };
 }
 
+// One point per label per UTC day: the median of that day's runs.
 function seriesFor(rows, labels, field) {
-  return labels.map((label) => ({
-    label,
-    color: colorOf(label),
-    points: rows
-      .filter((r) => r.label === label && Number.isFinite(r[field]))
-      .map((r) => ({ t: r.t, v: r[field], row: r })),
-  }));
+  return labels.map((label) => {
+    const days = new Map();
+    for (const r of rows) {
+      if (r.label !== label || !Number.isFinite(r[field])) continue;
+      const day = utcDay(r.t);
+      if (!days.has(day)) days.set(day, []);
+      days.get(day).push(r);
+    }
+    const points = [...days]
+      .sort((a, b) => a[0] - b[0])
+      .map(([t, runs]) => ({ t, v: quantile(runs.map((r) => r[field]), 0.5), runs }));
+    return { label, color: colorOf(label), points };
+  });
+}
+
+function runsNote(runs) {
+  const models = countBy(runs.filter((r) => r.cpu_model), (r) => r.cpu_model);
+  const n = runs.length;
+  const which = models.length === 1
+    ? models[0][0]
+    : models.map(([m, c]) => `${m} (${c})`).join(", ");
+  return `median of ${n} run${n === 1 ? "" : "s"}${which ? ` · ${which}` : ""}`;
 }
 
 function renderLegend(key, series) {
@@ -436,14 +443,14 @@ const tooltip = document.getElementById("tooltip");
 function showTooltip(container, x, clientY, t, rows, kind) {
   const fmt = kind === "duration" ? fmtDuration : fmtScore;
   tooltip.replaceChildren(
-    el("div", { class: "tt-time", text: dateTimeFmt.format(t) }),
+    el("div", { class: "tt-time", text: `${dayFmt.format(t)} (UTC)` }),
     ...(rows.length
       ? rows.map(({ s, p }) =>
         el("div", { class: "tt-row" },
           el("span", { class: "line-key", style: { background: s.color } }),
           el("span", { class: "tt-value", text: fmt(p.v) }),
           el("span", { class: "tt-label", text: s.label }),
-          p.row.cpu_model ? el("span", { class: "tt-cpu", text: p.row.cpu_model }) : null))
+          el("span", { class: "tt-cpu", text: runsNote(p.runs) })))
       : [el("div", { class: "tt-label", text: "No result" })]),
   );
   tooltip.hidden = false;
@@ -532,8 +539,11 @@ const CHARTS = [
 function render() {
   const rows = visibleRows();
   const labels = labelsIn(rows);
-  const now = Date.now();
-  const t0 = state.range === "all" ? (rows.length ? rows[0].t : now - DAY) : now - RANGES[state.range];
+  const today = utcDay(Date.now());
+  const first = state.range === "all"
+    ? (rows.length ? utcDay(rows[0].t) : today)
+    : today - (RANGES[state.range] - 1) * DAY;
+  const domain = [first - DAY / 2, today + DAY / 2];
   for (const c of CHARTS) {
     const series = seriesFor(rows, labels, c.field);
     renderLegend(c.field, series);
@@ -542,7 +552,7 @@ function render() {
     node.setAttribute("role", "img");
     node.setAttribute("aria-label",
       `${c.name} over time by runner label. Focus and use the arrow keys to read values; the runs table lists every value.`);
-    renderChart(node, { series, domain: [t0, now], kind: c.kind });
+    renderChart(node, { series, domain, kind: c.kind });
   }
   renderSummary(rows, labels);
   renderModels(rows, labels);
