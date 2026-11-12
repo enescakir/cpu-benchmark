@@ -12,7 +12,6 @@ const DAY = 24 * HOUR;
 const RANGES = { "1d": 24, "7d": 7 * 24, "30d": 30 * 24, "90d": 90 * 24, all: Infinity };
 // x64 and arm64 runners never share a chart: the page shows one at a time.
 const ARCHES = ["x64", "arm64"];
-const GAP = 3 * HOUR; // a line breaks across an outage longer than this
 const SNAP = 30 * 60e3; // tooltip matches series points within this of the crosshair
 const PAGE = 50;
 
@@ -344,20 +343,11 @@ function renderChart(container, cfg) {
   }
 
   for (const s of series) {
-    let d = "";
-    const singles = [];
-    s.points.forEach((p, i) => {
-      const prev = s.points[i - 1], next = s.points[i + 1];
-      const startsRun = !prev || p.t - prev.t > GAP;
-      const endsRun = !next || next.t - p.t > GAP;
-      if (startsRun && endsRun) singles.push(p);
-      d += `${startsRun ? "M" : "L"}${xOf(p.t).toFixed(1)},${yOf(p.v).toFixed(1)}`;
-    });
+    // One continuous line per series, even across hours without a result.
+    const d = s.points.map((p, i) => `${i ? "L" : "M"}${xOf(p.t).toFixed(1)},${yOf(p.v).toFixed(1)}`).join("");
     if (d) svg("path", { class: "series", d, style: `stroke:${s.color}` }, root);
     const last = s.points[s.points.length - 1];
-    for (const p of new Set([...singles, ...(last ? [last] : [])])) {
-      svg("circle", { class: "dot", cx: xOf(p.t), cy: yOf(p.v), r: 4, style: `fill:${s.color}` }, root);
-    }
+    if (last) svg("circle", { class: "dot", cx: xOf(last.t), cy: yOf(last.v), r: 4, style: `fill:${s.color}` }, root);
   }
 
   if (direct) {
