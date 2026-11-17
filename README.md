@@ -1,7 +1,7 @@
-# Ubicloud runner CPU benchmark
+# Ubicloud runner benchmark
 
 Every hour, [`cpu-benchmark.yml`](.github/workflows/cpu-benchmark.yml) runs the
-PassMark PerformanceTest CPU suite on each of these runner labels:
+PassMark PerformanceTest CPU suite and a download speed test on each of these runner labels:
 
 - `ubicloud-standard-2`
 - `ubicloud-premium-2`
@@ -11,6 +11,13 @@ For every job it records:
 
 - **PassMark CPU Mark** (`SUMM_CPU`), **single-thread score** (`CPU_SINGLETHREAD`) and every
   CPU sub-test, from `pt_linux -r 1 -i 2 -d 2 -p $(nproc)`
+- **Download speed** in Mbit/s, 64 MiB each with `curl`, from:
+  - **GitHub**: a pinned Actions runner release asset (a Range request takes the first 64 MiB)
+  - **Cloudflare**: the `speed.cloudflare.com` test endpoint (it refuses 100 MB or more)
+
+  The rate counts only the body transfer, from the first byte to the last. The time to
+  first byte (DNS, TCP, TLS, redirects) is stored next to it as `ttfb_ms`. A failed
+  download is stored with its error and does not fail the job.
 - **CPU model** from `lscpu`, plus PassMark's own CPUID-based processor name
 - **Queue time**: the job's `started_at - created_at` from the GitHub Jobs API
 
@@ -22,9 +29,10 @@ as charts.
 ```
 bench (matrix, one job per label)          publish (ubuntu-latest)                pages (ubuntu-slim)
   scripts/bench.rb system                    download result artifacts             site/ + data branch
-  scripts/install-passmark.sh       ──►      scripts/store.rb collect     ──►      → GitHub Pages
-  scripts/bench.rb passmark                    (Jobs API: created/started_at)
-  upload result-<label> artifact             scripts/push-data.sh → data branch
+  scripts/bench.rb network          ──►      scripts/store.rb collect     ──►      → GitHub Pages
+  scripts/install-passmark.sh                  (Jobs API: created/started_at)
+  scripts/bench.rb passmark                  scripts/push-data.sh → data branch
+  upload result-<label> artifact
 ```
 
 - Queue time is read in the `publish` job, after every benchmark job has finished.
@@ -45,7 +53,7 @@ bench (matrix, one job per label)          publish (ubuntu-latest)              
    (On a private repository this needs a paid GitHub plan. Unless you are on
    Enterprise Cloud with private Pages, the site is public.)
 3. Push to `main`. The first push deploys an empty site.
-4. Run **Actions → CPU benchmark → Run workflow** once to get the first data
+4. Run **Actions → Runner benchmark → Run workflow** once to get the first data
    without waiting for the schedule. Scheduled runs fire at minute 17 of every hour.
 
 To benchmark more labels, add them to the matrix in `cpu-benchmark.yml`. They show up

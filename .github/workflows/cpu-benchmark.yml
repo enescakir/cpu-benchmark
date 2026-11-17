@@ -1,7 +1,8 @@
-name: CPU benchmark
+name: Runner benchmark
 
-# PassMark PerformanceTest CPU suite every hour on each Ubicloud runner label,
-# plus the runner's CPU model and how long the job waited for a runner.
+# PassMark PerformanceTest CPU suite and download speed from GitHub and
+# Cloudflare, every hour on each Ubicloud runner label, plus the runner's CPU
+# model and how long the job waited for a runner.
 # Results are appended to the `data` branch and published to GitHub Pages.
 
 on:
@@ -36,6 +37,10 @@ jobs:
 
       - name: System info
         run: ruby scripts/bench.rb system --out "$RUNNER_TEMP/bench/$BENCH_LABEL.json"
+
+      # Before PassMark is installed, so no apt or download traffic overlaps.
+      - name: Network download speed
+        run: ruby scripts/bench.rb network --out "$RUNNER_TEMP/bench/$BENCH_LABEL.json"
 
       - name: Install PassMark
         run: scripts/install-passmark.sh "$RUNNER_TEMP/passmark/pt_linux"

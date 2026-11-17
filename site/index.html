@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Runner CPU Benchmark</title>
-  <meta name="description" content="Hourly PassMark CPU benchmark and job queue time for Ubicloud GitHub Actions runners.">
+  <title>Runner Benchmark</title>
+  <meta name="description" content="Hourly PassMark CPU benchmark, download speed and job queue time for Ubicloud GitHub Actions runners.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="page">
     <header class="masthead">
-      <h1>Ubicloud runner CPU benchmark</h1>
+      <h1>Ubicloud runner benchmark</h1>
       <p class="lede">
-        PassMark PerformanceTest CPU suite, run every hour on each runner label, with the CPU model the
-        job landed on and how long it waited for a runner (job <code>created_at</code> to
-        <code>started_at</code>).
+        PassMark PerformanceTest CPU suite and download speed from GitHub and Cloudflare, run every hour
+        on each runner label, with the CPU model the job landed on and how long it waited for a runner
+        (job <code>created_at</code> to <code>started_at</code>).
       </p>
       <p class="meta" id="meta">Loading results…</p>
     </header>
@@ -43,6 +43,24 @@
         </div>
         <div class="legend" data-legend="single_thread"></div>
         <div class="chart" id="chart-single"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Download from GitHub</h2>
+          <p>64 MiB of an Actions runner release asset, in Mbit/s, median per UTC hour. Higher is better.</p>
+        </div>
+        <div class="legend" data-legend="github_mbps"></div>
+        <div class="chart" id="chart-github"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Download from Cloudflare</h2>
+          <p>64 MiB from Cloudflare's speed test endpoint, in Mbit/s, median per UTC hour. Higher is better.</p>
+        </div>
+        <div class="legend" data-legend="cloudflare_mbps"></div>
+        <div class="chart" id="chart-cloudflare"></div>
       </section>
 
       <section class="card">
@@ -92,6 +110,8 @@
                 <th scope="col" class="num">CPU Mark</th>
                 <th scope="col" class="num">Single-thread</th>
                 <th scope="col" class="num">Queue</th>
+                <th scope="col" class="num">GitHub Mbit/s</th>
+                <th scope="col" class="num">Cloudflare Mbit/s</th>
                 <th scope="col">Result</th>
               </tr>
             </thead>
@@ -106,6 +126,8 @@
       <p>
         Raw data: one JSON line per job in <a href="data/index.json">data/runs/&lt;month&gt;.jsonl</a>.
         PassMark arguments: <code>-r 1 -i 2 -d 2 -p $(nproc)</code>.
+        Download speed counts the body transfer only, from the first byte to the last, with
+        <code>curl</code>.
       </p>
     </footer>
   </main>

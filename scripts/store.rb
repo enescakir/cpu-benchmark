@@ -109,8 +109,9 @@ def collect(results_dir, out)
   File.write(out, "#{JSON.pretty_generate(rows)}\n")
   rows.each do |row|
     queue = row["queue_seconds"].nil? ? "-" : "#{row["queue_seconds"]}s"
-    puts format("%-28s queue=%s cpu_mark=%s single=%s cpu=%p %s",
-      row["label"], queue, row["cpu_mark"].inspect, row["single_thread"].inspect, row["cpu_model"], row["conclusion"])
+    puts format("%-28s queue=%s cpu_mark=%s single=%s github=%s cloudflare=%s cpu=%p %s",
+      row["label"], queue, row["cpu_mark"].inspect, row["single_thread"].inspect,
+      row["github_mbps"].inspect, row["cloudflare_mbps"].inspect, row["cpu_model"], row["conclusion"])
   end
   0
 end

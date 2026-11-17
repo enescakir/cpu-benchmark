@@ -1,10 +1,11 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# CPU benchmark for the runner this job landed on.
+# CPU and network benchmark for the runner this job landed on.
 #
 # Usage:
 #   bench.rb system   --out result.json
+#   bench.rb network  --out result.json
 #   bench.rb passmark --out result.json --binary /tmp/passmark/pt_linux [--raw DIR]
 #
 # Each subcommand merges its fields into the result file, so a failed PassMark
@@ -25,6 +26,20 @@ require "tmpdir"
 # medium test duration (-d 2).
 PASSMARK_ARGS = %w[-r 1 -i 2 -d 2].freeze
 PASSMARK_TIMEOUT = 20 * 60
+
+# Every download fetches this many bytes, so the targets compare. Cloudflare's
+# speed test endpoint refuses 100 MB or more.
+DOWNLOAD_BYTES = 64 * 1024 * 1024
+DOWNLOAD_TIMEOUT = 60
+DOWNLOADS = {
+  # A pinned Actions runner release tarball (217 MiB; a Range request takes the
+  # first 64 MiB). Release assets, checkout and ghcr.io pulls are all served
+  # from GitHub's own network.
+  "github" => "https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz",
+  # Cloudflare's speed test endpoint, from the nearest edge. Docker Hub and many
+  # package registries sit behind Cloudflare. It ignores Range and sends `bytes`.
+  "cloudflare" => "https://speed.cloudflare.com/__down?bytes=#{DOWNLOAD_BYTES}"
+}.freeze
 
 def nproc
   Etc.nprocessors
@@ -87,6 +102,58 @@ def group_system
     "os" => os_name,
     "kernel" => Etc.uname[:release]
   }
+end
+
+# ── network ──────────────────────────────────────────────────────────────
+
+# Download url once with curl and report how fast the body arrived.
+#
+# mbps counts only the body transfer, from the first byte to the last, so it
+# measures bandwidth. Everything before the first byte (DNS, TCP, TLS,
+# redirects, server think time) is ttfb_ms.
+def download(url)
+  out, err, = Open3.capture3("curl", "--silent", "--show-error", "--location", "--fail",
+    "--range", "0-#{DOWNLOAD_BYTES - 1}", "--connect-timeout", "15", "--max-time", DOWNLOAD_TIMEOUT.to_s,
+    "--output", "/dev/null", "--write-out", "%{json}", url)
+  info = begin
+    JSON.parse(out)
+  rescue JSON::ParserError
+    {"exitcode" => -1, "errormsg" => err.strip.empty? ? "curl wrote no timing data" : err.strip}
+  end
+
+  bytes = info["size_download"].to_i
+  first_byte = info["time_starttransfer"].to_f
+  body_seconds = info["time_total"].to_f - first_byte
+  code = info["exitcode"].to_i
+  # A timeout (28) still measured a rate, just a slow one; other failures did not.
+  rate = (code.zero? || code == 28) && bytes.positive? && body_seconds.positive?
+  # curl reports 0 / "0" / "" for what it never got to (no DNS, no connection).
+  {
+    "url" => url,
+    "http_code" => info["http_code"].to_i.nonzero?,
+    "http_version" => (info["http_version"] unless ["0", ""].include?(info["http_version"].to_s)),
+    "remote_ip" => (info["remote_ip"] unless info["remote_ip"].to_s.empty?),
+    "bytes" => bytes,
+    "seconds" => info["time_total"]&.round(3),
+    "ttfb_ms" => first_byte.positive? ? (first_byte * 1000).round : nil,
+    "mbps" => rate ? (bytes * 8 / body_seconds / 1e6).round(1) : nil,
+    "error" => code.zero? ? nil : "curl exit #{code}: #{info["errormsg"]}"
+  }.compact
+rescue SystemCallError => e
+  {"url" => url, "error" => e.message}
+end
+
+# A failed download is recorded, not raised, so the CPU benchmark still runs.
+def group_network
+  results = DOWNLOADS.to_h do |name, url|
+    puts "+ curl #{url}"
+    result = download(url)
+    puts "::warning::#{name} download failed: #{result["error"]}" if result["error"]
+    puts format("  %s: %s Mbit/s, first byte after %s ms, %d bytes",
+      name, result["mbps"] || "-", result["ttfb_ms"] || "-", result["bytes"].to_i)
+    [name, result]
+  end
+  results.to_h { |name, r| ["#{name}_mbps", r["mbps"]] }.merge("network" => results)
 end
 
 # ── passmark ─────────────────────────────────────────────────────────────
@@ -194,20 +261,23 @@ def main(argv)
   group = argv.shift
   opts = {binary: "/tmp/passmark/pt_linux"}
   parser = OptionParser.new do |o|
-    o.banner = "Usage: bench.rb {system|passmark} --out FILE [--binary PATH] [--raw DIR]"
+    o.banner = "Usage: bench.rb {system|network|passmark} --out FILE [--binary PATH] [--raw DIR]"
     o.on("--out FILE", "result JSON to merge fields into") { |v| opts[:out] = v }
     o.on("--binary PATH", "PassMark pt_linux binary") { |v| opts[:binary] = v }
     o.on("--raw DIR", "directory to copy results_cpu.yml and the PassMark log into") { |v| opts[:raw] = v }
   end
   parser.parse!(argv)
-  abort parser.help unless %w[system passmark].include?(group) && opts[:out]
+  abort parser.help unless %w[system network passmark].include?(group) && opts[:out]
 
   path = opts[:out]
   result = File.exist?(path) ? JSON.parse(File.read(path)) : {}
   status = 0
   begin
-    if group == "system"
+    case group
+    when "system"
       result.merge!(group_system)
+    when "network"
+      result.merge!(group_network)
     else
       result.delete("error")
       result.merge!(group_passmark(opts[:binary], opts[:raw]))
@@ -219,7 +289,7 @@ def main(argv)
   end
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, "#{JSON.pretty_generate(result)}\n")
-  puts JSON.pretty_generate(result.reject { |k, _| k == "passmark" })
+  puts JSON.pretty_generate(result.reject { |k, _| %w[passmark network].include?(k) })
   status
 end
 

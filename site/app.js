@@ -42,6 +42,7 @@ const monthFmt = new Intl.DateTimeFormat(undefined, { month: "short", year: "num
 const utcHour = (t) => Math.floor(t / HOUR) * HOUR; // start of the UTC hour
 
 const fmtScore = (v) => (v == null ? "–" : nf.format(v));
+const fmtRate = (v) => (v == null ? "–" : `${nf.format(v)} Mbit/s`);
 
 function fmtDuration(s) {
   if (s == null || !Number.isFinite(s)) return "–";
@@ -196,6 +197,8 @@ function renderSummary(rows, labels) {
           stat("Single-thread, median", fmtScore(quantile(mine.map((r) => r.single_thread), 0.5))),
           stat("Queue, median", fmtDuration(quantile(queue, 0.5))),
           stat("Queue, p95", fmtDuration(quantile(queue, 0.95))),
+          stat("GitHub download, median", fmtScore(quantile(mine.map((r) => r.github_mbps), 0.5)), "Mbit/s"),
+          stat("Cloudflare download, median", fmtScore(quantile(mine.map((r) => r.cloudflare_mbps), 0.5)), "Mbit/s"),
         ),
         el("p", { class: "models-line" },
           `${nf.format(mine.length)} runs` + (failed ? `, ${nf.format(failed)} failed` : "") + ` · ${modelText}`),
@@ -438,7 +441,7 @@ function nearest(points, t) {
 const tooltip = document.getElementById("tooltip");
 
 function showTooltip(container, x, clientY, t, rows, kind) {
-  const fmt = kind === "duration" ? fmtDuration : fmtScore;
+  const fmt = { duration: fmtDuration, rate: fmtRate }[kind] || fmtScore;
   tooltip.replaceChildren(
     el("div", { class: "tt-time", text: `${dayHourFmt.format(t)} UTC` }),
     ...(rows.length
@@ -514,11 +517,13 @@ function renderRuns(rows) {
       el("td", { class: "num", text: fmtScore(r.cpu_mark) }),
       el("td", { class: "num", text: fmtScore(r.single_thread) }),
       el("td", { class: "num", text: fmtDuration(r.queue_seconds) }),
+      el("td", { class: "num", text: fmtScore(r.github_mbps) }),
+      el("td", { class: "num", text: fmtScore(r.cloudflare_mbps) }),
       cell,
     );
   }));
   if (!shown.length) {
-    body.append(el("tr", {}, el("td", { class: "empty", colspan: "7", text: "No results in this range." })));
+    body.append(el("tr", {}, el("td", { class: "empty", colspan: "9", text: "No results in this range." })));
   }
   document.getElementById("runs-caption").textContent =
     `Every benchmark job in this range, newest first (${nf.format(Math.min(shown.length, newest.length))} of ${nf.format(newest.length)}).`;
@@ -529,6 +534,8 @@ function renderRuns(rows) {
 
 const CHARTS = [
   { id: "chart-single", field: "single_thread", kind: "score", name: "Single-thread score" },
+  { id: "chart-github", field: "github_mbps", kind: "rate", name: "Download speed from GitHub" },
+  { id: "chart-cloudflare", field: "cloudflare_mbps", kind: "rate", name: "Download speed from Cloudflare" },
   { id: "chart-queue", field: "queue_seconds", kind: "duration", name: "Queue time" },
 ];
 
