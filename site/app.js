@@ -358,7 +358,8 @@ function renderChart(container, cfg) {
 
   // Hover layer: a crosshair snapped to the nearest run, one tooltip for all series.
   const times = [...new Set(series.flatMap((s) => s.points.map((p) => p.t)))].sort((a, b) => a - b);
-  const hover = svg("g", { visibility: "hidden" }, root);
+  // display, not visibility: a dot set visible would show through a hidden group.
+  const hover = svg("g", { display: "none" }, root);
   const cross = svg("line", { class: "crosshair", y1: m.top, y2: height - m.bottom }, hover);
   const hoverDots = series.map((s) => svg("circle", { class: "dot", r: 4, style: `fill:${s.color}` }, hover));
   const hit = svg("rect", { x: m.left, y: 0, width: plotW, height, fill: "transparent" }, root);
@@ -382,11 +383,11 @@ function renderChart(container, cfg) {
         dot.setAttribute("visibility", "hidden");
       }
     });
-    hover.setAttribute("visibility", "visible");
+    hover.removeAttribute("display");
     showTooltip(container, x, clientY, t, rows, kind);
   };
   const hide = () => {
-    hover.setAttribute("visibility", "hidden");
+    hover.setAttribute("display", "none");
     hideTooltip();
   };
   const fromPointer = (ev) => {
